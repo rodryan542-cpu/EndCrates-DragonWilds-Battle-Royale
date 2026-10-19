@@ -28,6 +28,8 @@ The bridge targets API metadata inspected from Dragonwilds CL 251392 / Unreal 5.
 
 Metadata establishes names and signatures, not execution order or behavior. A Lua mock cannot validate Unreal's struct marshaling, replication, lock semantics, every damage route, or a changed game build.
 
+The protection locker additionally uses the documented Engine APIs [`AActor:AddComponentByClass`](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/AActor/AddComponentByClass) and a non-playing [`UTimelineComponent`](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/UTimelineComponent), with its tick disabled. This creates one world-owned object instead of borrowing the controller's lock identity. These Engine helpers were not part of the saved Dominion dump and need live validation too. The entry point checks their reflected API presence before allowing the mod to run.
+
 The bridge checks that required UFunctions exist and disables match processing after a runtime failure. Preflight also requires server authority, sufficient readable GameSession capacity, an operator-confirmed PvP world, and matching recorded world ID. These checks reduce avoidable errors; they are not a substitute for gameplay testing.
 
 ## Required live acceptance checks

@@ -23,6 +23,21 @@ class AdapterTests(unittest.TestCase):
         self.assertFalse(self.lua.eval('pc1.Pawn.damage.bIsPvpEnabled'))
         self.assertFalse(self.lua.eval('pc1.Pawn.health.immortal'))
 
+    def test_protection_locker_is_unique_shared_and_inert(self):
+        self.lua.execute("adapter:mode(id,'lobby');adapter:mode(adapter:identify(pc2),'lobby')")
+        self.assertEqual(self.lua.eval('game_state.created_components'),1)
+        self.assertFalse(self.lua.eval('adapter.locker.ticking'))
+        self.assertFalse(self.lua.eval('pc1.Pawn.health.locker==pc1'))
+        self.assertTrue(self.lua.eval('pc1.Pawn.health.locker==pc2.Pawn.health.locker'))
+
+    def test_actor_lookup_uses_address_not_lua_wrapper_identity(self):
+        self.lua.execute("wrapper=object('Another Lua wrapper');wrapper.GetAddress=function()return pc1.Pawn:GetAddress()end")
+        self.assertEqual(self.lua.eval('adapter:actor_id(wrapper)'),self.lua.globals().id)
+
+    def test_refresh_does_not_release_locks_for_new_wrappers_of_same_pawn(self):
+        self.lua.execute("adapter:mode(id,'lobby');original=pc1.Pawn;wrapper=setmetatable({GetAddress=original.GetAddress},{__index=original});pc1.Pawn=wrapper;adapter:refresh()")
+        self.assertTrue(self.lua.eval('original.health.immortal'))
+
     def test_native_teleports_are_globally_staggered_and_deduplicated(self):
         self.lua.execute("for n=3,20 do make_pc(n) end;adapter:refresh();for pid in pairs(adapter.peers) do adapter:teleport(pid,{x=100,y=200,z=300});adapter:teleport(pid,{x=400,y=500,z=600}) end;adapter:pump_teleports()")
         self.assertEqual(self.lua.eval('adapter.teleports_sent'),4)

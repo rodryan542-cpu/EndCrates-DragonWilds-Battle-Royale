@@ -22,6 +22,8 @@ Every arena uses coordinates in the existing world. The mod does not open a new 
 
 Match lookup and damage permission checks use direct player/match indexes. Active sampling is linear in the number of participants, rather than scanning every player against every other player. Geometry is validated when configuration changes, not on every active tick. Completed match tables are removed; idle disconnected peers expire.
 
+Native actor indexes use `GetAddress()` integers, since separate Lua userdata wrappers can refer to the same Unreal actor. One inactive, world-owned component supplies a distinct BR protection-lock identity; it is not a streaming source or a replicated actor.
+
 The item catalogue contains identifiers and paths. A grant loads only the requested item asset. This avoids spawning or preloading a copy of every item in the lobby. Loading an item can still cause the game to load its normal dependencies.
 
 ## Offline simulation

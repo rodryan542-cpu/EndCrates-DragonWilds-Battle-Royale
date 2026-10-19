@@ -30,13 +30,13 @@ local function refresh(now)
         if world then stop();world=nil end
         return false
     end
-    if world and world~=current then
+    if world and world~=current:GetAddress() then
         stop()
         adapter=Adapter.new(Config,log);engine=Engine.new(Config,adapter)
         commands=Commands.new(engine,adapter,catalogue)
         log('World changed. BR is disabled until the new world is checked.')
     end
-    world=current
+    world=current:GetAddress()
     if requested_start then
         requested_start=false;local ok,why=pcall(enable)
         if not ok then log('Automatic start refused: '..tostring(why)) end
@@ -79,6 +79,9 @@ local required={
     '/Script/Dominion.DominionPlayerCharacter:BP_TriggerDelayedTeleport',
     '/Script/Dominion.DominionPlayerCharacter:IsTeleporting',
     '/Script/Dominion.DominionPlayerController:IsPlayerReady',
+    '/Script/Engine.Actor:AddComponentByClass',
+    '/Script/Engine.ActorComponent:SetComponentTickEnabled',
+    '/Script/Engine.TimelineComponent',
 }
 for _,path in ipairs(required) do
     if not valid(StaticFindObject(path)) then healthy=false;log('Required API is missing: '..path) end

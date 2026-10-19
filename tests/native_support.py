@@ -1,7 +1,10 @@
 NATIVE_MOCKS = '''
 hooks,console_commands,delivered,logs,controllers,assets={}, {}, {}, {}, {}, {}
+next_address=1000
 function object(name)
+    next_address=next_address+1;local address=next_address
     return {IsValid=function()return true end,GetFullName=function()return name end,
+        GetAddress=function()return address end,
         GetFName=function()return {ToString=function()return name end}end}
 end
 function print(message) logs[#logs+1]=message end
@@ -18,6 +21,12 @@ function LoadAsset(path) load_count=(load_count or 0)+1 end
 game_state=object('LiveGameState');game_state.WorldInfo={WorldId={A=10,B=20,C=30,D=40}}
 game_state.bIsDedicatedServer=true
 function game_state:HasAuthority()return true end
+function game_state:AddComponentByClass(class,manual,transform,deferred)
+    self.created_components=(self.created_components or 0)+1
+    local component=object('BR_Locker_'..self.created_components)
+    function component:SetComponentTickEnabled(enabled)self.ticking=enabled end
+    return component
+end
 session=object('LiveSession');session.MaxPlayers=100
 settings=object('ServerSettings');settings.OwnerId='owner2'
 function FindFirstOf(name)

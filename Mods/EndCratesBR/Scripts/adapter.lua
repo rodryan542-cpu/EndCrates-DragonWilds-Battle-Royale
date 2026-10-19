@@ -5,6 +5,7 @@ local function valid(o)
     local ok,result=pcall(function() return o and o:IsValid() end)
     return ok and result==true
 end
+local function same_object(a,b) return valid(a) and valid(b) and a:GetAddress()==b:GetAddress() end
 local function str(v)
     if type(v)=='string' then return v end
     local ok,s=pcall(function() return v:ToString() end);return ok and s or tostring(v)
@@ -29,16 +30,16 @@ function Adapter:refresh()
         local ok,id,owner,character=pcall(self.identify,self,pc)
         if ok and id then
             local previous=self.peers[id]
-            if previous and previous.pc~=pc then self:release(id);previous=nil end
-            if previous and previous.pawn~=pc.Pawn then self:release(id) end
+            if previous and not same_object(previous.pc,pc) then self:release(id);previous=nil end
+            if previous and not same_object(previous.pawn,pc.Pawn) then self:release(id) end
             local p=previous or {id=id}
             p.pc=pc;p.owner=owner;p.character=character
             p.name=str(pc.PlayerState:GetPlayerName());p.pawn=pc.Pawn
             if valid(p.pawn) then
-                self.actors[p.pawn]=id
+                self.actors[p.pawn:GetAddress()]=id
                 p.token=p.pawn:GetFullName()
             else p.token='unpossessed' end
-            self.actors[pc]=id;self.peers[id]=p;seen[id]=p
+            self.actors[pc:GetAddress()]=id;self.peers[id]=p;seen[id]=p
         end
     end
     return seen
@@ -66,19 +67,35 @@ function Adapter:mode(id,mode)
     local p,pawn=self:peer(id)
     local damage=pawn:GetPlayerDamageComponent();local health=pawn:GetHealthComponent()
     if not valid(damage) or not valid(health) then error('Missing player combat components.',0) end
-    if not p.original or p.original.pawn~=pawn then
+    if not p.original or not same_object(p.original.pawn,pawn) then
         p.original={pawn=pawn,pvp=damage.bIsPvpEnabled}
     end
     local active=mode=='active'
-    -- A locker owned by this controller is released on shutdown; unrelated lockers remain.
-    if health:SetIsImmortal(true,p.pc)~=true then error('Native immortality lock was refused.',0) end
-    damage:SetIsInvulnerable(not active,p.pc)
+    local locker=self:protection_locker()
+    if health:SetIsImmortal(true,locker)~=true then error('Native immortality lock was refused.',0) end
+    damage:SetIsInvulnerable(not active,locker)
     damage.bIsPvpEnabled=active
     damage:OnRep_bIsPvpEnabled()
     if damage.bIsPvpEnabled~=active then error('PvP flag did not persist.',0) end
     if not active then health:SetHealth(health:GetMaxHealth(),'EndCratesBR lobby') end
     p.mode=mode
     return true
+end
+function Adapter:protection_locker()
+    if valid(self.locker) then return self.locker end
+    local gs=FindFirstOf('DominionGameStateBase')
+    assert(valid(gs) and gs:HasAuthority(),'No authoritative world for protection locks.')
+    local class=StaticFindObject('/Script/Engine.TimelineComponent')
+    assert(valid(class),'Protection component class is unavailable.')
+    -- One inert, world-owned component gives BR a distinct GC-tracked locker.
+    -- It is not a streaming source and is never replicated to clients.
+    local locker=gs:AddComponentByClass(class,true,{
+        Translation={X=0,Y=0,Z=0},Rotation={X=0,Y=0,Z=0,W=1},Scale3D={X=1,Y=1,Z=1},
+    },false)
+    assert(valid(locker),'Could not create a distinct protection locker.')
+    locker:SetComponentTickEnabled(false)
+    self.locker=locker
+    return locker
 end
 function Adapter:release(id)
     local p=self.peers[id];if not p or not p.original then return true end
@@ -87,9 +104,10 @@ function Adapter:release(id)
         local ok,why=pcall(function()
             local health=original.pawn:GetHealthComponent()
             if health:GetAuthoritativeHealth()<=self.config.knockout_health then health:SetHealth(health:GetMaxHealth(),'EndCratesBR stop') end
-            health:SetIsImmortal(false,p.pc)
+            assert(valid(self.locker),'BR protection locker is unavailable.')
+            health:SetIsImmortal(false,self.locker)
             local damage=original.pawn:GetPlayerDamageComponent()
-            damage:SetIsInvulnerable(false,p.pc)
+            damage:SetIsInvulnerable(false,self.locker)
             damage.bIsPvpEnabled=original.pvp;damage:OnRep_bIsPvpEnabled()
         end)
         if not ok then self.log('Protection cleanup failed: '..tostring(why));return false end
@@ -133,9 +151,9 @@ end
 function Adapter:actor_id(actor)
     for _=1,4 do
         if not valid(actor) then return nil end
-        if self.actors[actor] then return self.actors[actor] end
+        if self.actors[actor:GetAddress()] then return self.actors[actor:GetAddress()] end
         local ok,owner=pcall(function() return actor:GetOwner() end)
-        if not ok or owner==actor then return nil end
+        if not ok or same_object(owner,actor) then return nil end
         actor=owner
     end
 end
