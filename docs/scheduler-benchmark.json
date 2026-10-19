@@ -1,0 +1,9 @@
+{
+  "scope": "Lua scheduler only; mocked peers; no game, terrain, AI, replication, or physics",
+  "matches": 50,
+  "players": 1000,
+  "samples": 200,
+  "median_ms": 1.316,
+  "p95_ms": 1.545,
+  "max_ms": 2.297
+}

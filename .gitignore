@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+*.log
+*.sav
+arena_state.lua
+arena_state.lua.tmp
+arena_state.lua.previous
+test-runtime/
