@@ -17,10 +17,17 @@ Every arena uses coordinates in the existing world. The mod does not open a new 
 | Player command rate | 3 per 2 seconds |
 | Chat deliveries per update | 8 |
 | Buffered chat replies | 4,096 maximum; old low-priority replies discarded first |
+| Kit grants | One item type per update globally, rotating between waiting players |
+| Personal kit size | 12 item types |
+| Completed result history | 20 rounds |
 | Catalogue query cache | 64 searches |
 | Catalogue UObject cache | 128 references |
 
-Match lookup and damage permission checks use direct player/match indexes. Active sampling is linear in the number of participants, rather than scanning every player against every other player. Geometry is validated when configuration changes, not on every active tick. Completed match tables are removed; idle disconnected peers expire.
+Match lookup and damage permission checks use direct player/match indexes. Active sampling is linear in the number of participants, rather than scanning every player against every other player. A circle is calculated once per match sample, not once per player. Geometry is validated when configuration changes, not on every active tick. Completed match tables are removed; result summaries are bounded, and idle disconnected peers expire.
+
+The chat outbox uses two linked FIFOs, so inserts, removals, and keyed replacements do not shift the whole backlog. Fight, circle, elimination, and result notices use the critical lane. Per-player phase updates coalesce; old countdowns and circle warnings expire. Pending circle notices are cleared when a player is eliminated or a round ends. A normal reply cannot displace a queue full of critical notices. At the configured hard limit, the oldest remaining message may still be dropped, so sustained overload must be addressed by reducing concurrent matches.
+
+Eliminations sampled together generate one compact broadcast per match, plus one personal placement message per eliminated player. For a 19-player knockout sample, that is 39 messages instead of 380 elimination messages. Victory announcements are separate. Circle updates have no additional replicated actors or streaming sources.
 
 Native actor indexes use `GetAddress()` integers, since separate Lua userdata wrappers can refer to the same Unreal actor. One inactive, world-owned component supplies a distinct BR protection-lock identity; it is not a streaming source or a replicated actor.
 
@@ -32,7 +39,7 @@ The item catalogue contains identifiers and paths. A grant loads only the reques
 python tools/benchmark_scheduler.py --output docs/scheduler-benchmark.json
 ```
 
-The test suite also creates 50 concurrent matches with 1,000 simulated players and checks that 100 combat samples produce exactly 100,000 player samples. [scheduler-benchmark.json](scheduler-benchmark.json) records a local timing run.
+The test suite also creates 50 concurrent matches with 1,000 simulated players and checks that 100 combat samples produce exactly 100,000 player samples with shrinking circles enabled. Players are placed at their arena centers so this test measures ongoing sampling rather than eliminating them. [scheduler-benchmark.json](scheduler-benchmark.json) records a local timing run with circles enabled.
 
 These are mock objects. There is no terrain, AI, physics, networking, asset loading, game thread contention, or client rendering in that measurement. It cannot predict RAM requirements, frame rate, or the number of real players Dragonwilds can support. Raising `max_active_matches` to 50 would require at least 1,000 fighter connections plus lobby capacity; this has not been validated.
 

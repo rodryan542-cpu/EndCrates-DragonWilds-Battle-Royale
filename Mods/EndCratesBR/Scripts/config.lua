@@ -12,6 +12,13 @@ return {
     zone_gap = 5000,
     boundary_grace_seconds = 10,
     match_timeout = 0, -- Zero: continue until one player remains.
+    ring_enabled = true,
+    ring_stages = { -- Fractions of the original arena radius; center stays at its recorded safe position.
+        {hold=120, shrink=120, factor=0.60},
+        {hold=60, shrink=90, factor=0.25},
+        {hold=30, shrink=60, factor=0.06},
+    },
+    result_history = 20,
     knockout_health = 1,
     return_timeout = 180,
     return_retry_seconds = 10,

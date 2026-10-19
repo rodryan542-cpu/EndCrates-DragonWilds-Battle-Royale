@@ -55,13 +55,18 @@ function Catalogue:asset(row)
     if #self.cache_order>128 then self.cache[table.remove(self.cache_order,1)]=nil end
     return obj
 end
-function Catalogue:give(adapter,id,query,count)
+function Catalogue:grant(adapter,id,query,count,topup)
     local row=self:unique(query);local data=self:asset(row)
     local p=adapter:peer(id);local inventory=p.pc.BP_Components_Inventory
     assert(valid(inventory),'Inventory is unavailable.')
     local before=inventory:GetNumItemsByData(data)
+    assert(type(before)=='number' and before>=0,'Inventory count is unavailable.')
+    if topup then count=math.max(0,count-before) end
+    if count==0 then return 0,row.name,0 end
     inventory:AddItemByData(data,count,1.0,{})
     local actual=math.max(0,inventory:GetNumItemsByData(data)-before)
-    return actual,row.name
+    return actual,row.name,count
 end
+function Catalogue:give(adapter,id,query,count) return self:grant(adapter,id,query,count,false) end
+function Catalogue:topup(adapter,id,query,count) return self:grant(adapter,id,query,count,true) end
 return Catalogue

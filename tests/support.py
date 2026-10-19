@@ -13,6 +13,7 @@ def runtime():
 MATCH_MOCKS = '''
 G=require('geometry');Engine=require('engine');config=require('config')
 config.enabled=true;config.pvp_world_confirmed=true
+config.ring_enabled=false
 config.lobby={x=0,y=0,z=500,radius=1500};config.zones={}
 function add_zone(i)
     local zone={id='zone'..i,center={x=i*100000,y=100000,z=500},radius=12000,spawns={}}

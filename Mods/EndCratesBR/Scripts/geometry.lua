@@ -24,6 +24,15 @@ function G.validate(c,complete)
         integer(c,key,1,100000)
     end
     integer(c,'match_timeout',0,86400)
+    integer(c,'result_history',1,100)
+    assert(type(c.ring_enabled)=='boolean' and type(c.ring_stages)=='table','Invalid ring configuration')
+    assert(#c.ring_stages>=1 and #c.ring_stages<=10,'Configure between one and ten ring stages')
+    local previous=1
+    for _,stage in ipairs(c.ring_stages) do
+        integer(stage,'hold',0,3600);integer(stage,'shrink',1,3600)
+        assert(G.finite(stage.factor) and stage.factor>0 and stage.factor<previous,'Ring stages must shrink to a positive, decreasing radius')
+        previous=stage.factor
+    end
     assert(G.finite(c.knockout_health) and c.knockout_health>=0,'Invalid knockout health')
     assert(type(c.zones)=='table' and type(c.admin_owner_ids)=='table','Invalid config lists')
     if not complete then return true end

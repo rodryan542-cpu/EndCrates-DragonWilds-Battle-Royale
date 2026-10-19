@@ -33,6 +33,29 @@ class CatalogueTests(unittest.TestCase):
         self.lua.execute("before=#catalogue.rows;catalogue:add({name='Old',path='/Game/Deleted/Old.Old'})")
         self.assertEqual(self.lua.eval('#catalogue.rows'),self.lua.globals().before)
 
+    def test_topup_counts_existing_inventory_and_repeated_load_adds_nothing(self):
+        self.lua.execute('''
+            data=object('Sword data');catalogue.asset=function()return data end
+            adapter={peer=function()return {pc=pc1}end};pc1.BP_Components_Inventory.count=7
+            added,name,needed=catalogue:topup(adapter,'p1','Scimitar_Dragon',10)
+            again=catalogue:topup(adapter,'p1','Scimitar_Dragon',10)
+        ''')
+        self.assertEqual(self.lua.globals().added,3)
+        self.assertEqual(self.lua.globals().needed,3)
+        self.assertEqual(self.lua.globals().again,0)
+        self.assertEqual(self.lua.eval('pc1.BP_Components_Inventory.count'),10)
+
+    def test_topup_reports_partial_capacity_without_discarding_items(self):
+        self.lua.execute('''
+            data=object('Sword data');catalogue.asset=function()return data end
+            adapter={peer=function()return {pc=pc1}end};pc1.BP_Components_Inventory.count=7
+            pc1.BP_Components_Inventory.AddItemByData=function(self,_,count)self.count=math.min(9,self.count+count)end
+            added,name,needed=catalogue:topup(adapter,'p1','Scimitar_Dragon',10)
+        ''')
+        self.assertEqual(self.lua.globals().added,2)
+        self.assertEqual(self.lua.globals().needed,3)
+        self.assertEqual(self.lua.eval('pc1.BP_Components_Inventory.count'),9)
+
 
 class PersistenceTests(unittest.TestCase):
     def test_geometry_roundtrip_preserves_quoted_names_and_previous_copy(self):

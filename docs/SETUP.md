@@ -40,6 +40,10 @@ Repeat at **20 different safe positions** inside that arena. Spawns must be at l
 
 Repeat `!br zone` and `!br spawn` for other areas around the world. Arenas must not overlap, must leave the configured gap, and must stay clear of the lobby. Avoid boss instances, quest-only rooms, water, cliffs, locked destinations, and areas whose terrain changes with quest progress.
 
+The safe circle shrinks toward the arena's recorded center. Check that the center and the paths toward it are playable; do not record a center on a cliff edge or inaccessible platform. No terrain is generated or flattened.
+
+Use `!br arenas [page]` to review recorded arenas. To correct a mistake while BR is disabled, use `!br removespawn <arena> [index]` (omitting the index removes the last spawn) or `!br removezone <arena>`. Record replacement spawns before saving. Edits invalidate the geometry checks and cannot be made during play.
+
 When the geometry is ready:
 
 ```text
@@ -56,9 +60,13 @@ Players enter the protected lobby, use `!items` and `!give`, and equip through t
 
 The global FIFO queue reserves 20 players for a free arena. One arena loads at a time by default. Once all 20 characters have arrived and report that teleporting has ended, the ten-second countdown begins. Other arenas can already be fighting.
 
-Each arena is a fixed circular boundary. Players have ten seconds to return if they leave it. There is no shrinking-circle visual or duplicated map instance in this build. The default round has no time limit. An optional configured time limit produces a draw if several players remain.
+Each arena has its own shrinking safe circle, using that round's start time. Players have ten seconds to return after leaving the current circle. `!ring` reports its center, radius, phase, and the player's distance from center. There is no rendered circle wall, map overlay, or duplicated map instance in this build. Configure `ring_stages` in `config.lua`, or set `ring_enabled=false` for a fixed arena. The final circle remains small until one player wins. An optional `match_timeout` produces a draw if several players remain.
 
-At one health or below, a player is eliminated and sent back to the lobby. Disconnects and character replacements forfeit the round. If all remaining players are eliminated in one sample, the result is a draw. Players manually enter `!ffa` again after choosing or adjusting a kit.
+At one health or below, a player is eliminated and sent back to the lobby. Disconnects and character replacements forfeit the round. If all remaining players are eliminated in one sample, the result is a draw. Players enter `!ffa` again after adjusting their kit, or opt into `!autoqueue on`. Automatic requeue waits for confirmed lobby arrival and never restores someone to their old round. `!leave` and `!lobby` turn it off.
+
+Saved kit lists hold up to 12 item types. `!kit load` adds only missing counts, at one type globally per update; it does not remove extra inventory or equip items. Loading is refused while queued, and queuing is refused until loading finishes. A failed grant stops the remaining kit work and reports the error; already granted items stay in inventory. Repeating a top-up counts those items before granting more.
+
+Results and kit lists are session data. They are not written into the game save or persisted across world/server restarts. Disconnected peers expire after `idle_peer_retention` (ten minutes by default). See [PLAYING.md](PLAYING.md).
 
 ## Admin controls
 

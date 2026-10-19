@@ -70,7 +70,7 @@ class AdapterTests(unittest.TestCase):
 
     def test_message_queue_is_bounded(self):
         self.lua.execute('config.max_pending_messages=10;for i=1,30 do adapter:message(id,"test") end')
-        self.assertEqual(self.lua.eval('#adapter.messages'),10)
+        self.assertEqual(self.lua.eval('adapter.outbox.count'),10)
         self.assertEqual(self.lua.eval('adapter.dropped_messages'),20)
         self.lua.execute('adapter:flush_messages()')
         self.assertEqual(self.lua.eval('#delivered'),8)

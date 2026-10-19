@@ -8,6 +8,8 @@ Important cases include groups of 19 versus 20; multiple simultaneous arenas; FI
 
 All shipped Lua files are syntax-checked. The built-in default configuration starts disabled and contains no fabricated spawn positions. No live player save is used by the tests.
 
+The expanded suite checks circle interpolation, independent round clocks, final radius, invalid schedules, circle grace and recovery, tied placements, native/health knockout deduplication, session stats, bounded history, queue positions, autoqueue arrival gating, and pre-start withdrawal. Kit tests cover count updates, existing inventory, partial capacity, fair scheduling, character replacement, combat/lobby restrictions, and failed loads. Outbox tests cover priority, overflow, expiration, keyed replacement, match cleanup, and UTF-8 truncation.
+
 ## API evidence
 
 The bridge targets API metadata inspected from Dragonwilds CL 251392 / Unreal 5.6.1:
@@ -44,5 +46,6 @@ The bridge checks that required UFunctions exist and disables match processing a
 8. Run two full matches at once and check that combat, chat, winners, and returns remain separate.
 9. Measure native server frame time, memory, bandwidth, and streaming behavior while increasing load. Verify cell unloading with the optional streaming profile rather than inferring it from Lua timing.
 10. Test `br_stop`, graceful shutdown, backups, and restart before exposing the server publicly.
+11. Check the circle center and travel routes on actual terrain. Verify warning timing, grace resets, the final circle, result pages, automatic requeue, and saved kit top-ups with clients under load. Chat delivery must remain timely; reduce concurrency if it does not.
 
 The game is not installed on the development machine. None of those live acceptance checks has been completed for this package. It is a source prototype requiring integration testing, not a verified production server.

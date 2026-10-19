@@ -9,6 +9,10 @@ class SchedulerScaleTests(unittest.TestCase):
             config.max_active_matches=50
             for i=5,50 do add_zone(i) end
             activate(1000)
+            config.ring_enabled=true
+            for _,m in pairs(engine.matches) do for id in pairs(m.alive) do
+                driver.players[id].x=m.zone.center.x;driver.players[id].y=m.zone.center.y
+            end end
             baseline=driver.samples
             for i=1,100 do engine:tick(clock+i) end
         ''')

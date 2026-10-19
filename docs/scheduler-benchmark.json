@@ -3,7 +3,8 @@
   "matches": 50,
   "players": 1000,
   "samples": 200,
-  "median_ms": 1.316,
-  "p95_ms": 1.545,
-  "max_ms": 2.297
+  "shrinking_circles": true,
+  "median_ms": 1.334,
+  "p95_ms": 1.579,
+  "max_ms": 2.898
 }

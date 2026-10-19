@@ -11,6 +11,10 @@ from support import runtime, MATCH_MOCKS
 
 lua=runtime();lua.execute(MATCH_MOCKS)
 lua.execute('config.max_active_matches=50;for i=5,50 do add_zone(i) end;activate(1000)')
+lua.execute('''config.ring_enabled=true
+    for _,m in pairs(engine.matches) do for id in pairs(m.alive) do
+        driver.players[id].x=m.zone.center.x;driver.players[id].y=m.zone.center.y
+    end end''')
 tick=lua.eval('function(n)engine:tick(clock+n)end')
 samples=[]
 for n in range(1,201):
@@ -18,7 +22,7 @@ for n in range(1,201):
 samples.sort()
 result={
     'scope':'Lua scheduler only; mocked peers; no game, terrain, AI, replication, or physics',
-    'matches':50,'players':1000,'samples':len(samples),
+    'matches':50,'players':1000,'samples':len(samples),'shrinking_circles':True,
     'median_ms':round(statistics.median(samples),3),
     'p95_ms':round(samples[int(len(samples)*0.95)-1],3),
     'max_ms':round(max(samples),3),

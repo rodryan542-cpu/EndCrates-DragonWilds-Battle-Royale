@@ -64,13 +64,15 @@ local function update()
         local peer=engine.peers[entry.id]
         if peer and peer.connected and peer.token==entry.token then commands:run(entry.id,entry.line,now) end
     end
+    local knocked_out={}
     for id in pairs(deaths) do
         local p=engine.peers[id]
-        if p and p.match then engine:eliminate(id,'native death',now) end
+        if p and p.match then knocked_out[#knocked_out+1]={id=id,reason='native death'} end
     end
     deaths={}
     adapter:pump_teleports()
-    if Config.enabled then engine:tick(now) end
+    if Config.enabled then engine:tick(now,knocked_out) end
+    commands:pump_kits()
     adapter:flush_messages()
 end
 local required={

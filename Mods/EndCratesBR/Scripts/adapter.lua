@@ -1,5 +1,6 @@
 -- Native bridge for the inspected CL 251392 API. Requires live-server validation.
 local G=require('geometry')
+local Outbox=require('outbox')
 local Adapter={};Adapter.__index=Adapter
 local function valid(o)
     local ok,result=pcall(function() return o and o:IsValid() end)
@@ -14,7 +15,7 @@ local function guid(g)
     return string.format('%08X%08X%08X%08X',g.A & 0xffffffff,g.B & 0xffffffff,g.C & 0xffffffff,g.D & 0xffffffff)
 end
 function Adapter.new(config,log)
-    return setmetatable({config=config,log=log,peers={},actors={},messages={},dropped_messages=0,
+    return setmetatable({config=config,log=log,peers={},actors={},outbox=Outbox.new(config.max_pending_messages),dropped_messages=0,
         teleport_order={},teleport_head=1,teleport_tail=0,teleport_pending={},teleports_sent=0},Adapter)
 end
 function Adapter:identify(pc)
@@ -168,20 +169,20 @@ function Adapter:is_admin(id)
     local settings=FindFirstOf('DedicatedServerSettings')
     return valid(settings) and str(settings.OwnerId)~='' and str(settings.OwnerId)==p.owner
 end
-function Adapter:message(id,message)
-    message=tostring(message):sub(1,1500)
-    local priority=message:find('VICTOR:',1,true)~=nil
-    if #self.messages>=self.config.max_pending_messages then
-        local discard=1
-        for i,m in ipairs(self.messages) do if not m.priority then discard=i;break end end
-        table.remove(self.messages,discard);self.dropped_messages=self.dropped_messages+1
-    end
-    self.messages[#self.messages+1]={id=id,text=message,priority=priority}
+function Adapter:message(id,message,options)
+    options=options or {};message=tostring(message)
+    local finish=math.min(1500,#message)
+    while finish>0 and message:byte(finish+1) and message:byte(finish+1)>=128 and message:byte(finish+1)<192 do finish=finish-1 end
+    message=message:sub(1,finish)
+    self.outbox.limit=self.config.max_pending_messages
+    self.outbox:push({id=id,text=message,priority=options.priority or message:find('VICTOR:',1,true)~=nil,
+        key=options.key,expires=options.ttl and os.time()+options.ttl})
+    self.dropped_messages=self.outbox.dropped
     return true
 end
 function Adapter:flush_messages()
     for _=1,self.config.message_budget_per_tick do
-        local m=table.remove(self.messages,1);if not m then break end
+        local m=self.outbox:pop(os.time());self.dropped_messages=self.outbox.dropped;if not m then break end
         local ok,why=pcall(function()
             local p=self.peers[m.id];if not p or not valid(p.pc) or not valid(p.pc.PlayerState) then return end
             local g=p.pc:GetCharacterGuid().InnerGuid
@@ -192,6 +193,9 @@ function Adapter:flush_messages()
         end)
         if not ok then self.log('Chat delivery failed: '..tostring(why)) end
     end
+end
+function Adapter:clear_notices(id,match_id)
+    for _,prefix in ipairs({'phase:','ring:','boundary:'}) do self.outbox:discard(id,prefix..match_id) end
 end
 function Adapter:diagnostics()
     local gs=FindFirstOf('DominionGameStateBase')

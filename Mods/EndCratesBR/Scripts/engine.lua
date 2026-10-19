@@ -1,10 +1,11 @@
 -- Match rules: no Unreal objects, file I/O, or world/asset scans.
 local G=require('geometry')
+local Ring=require('ring')
 local Engine={}; Engine.__index=Engine
 function Engine.new(config,driver)
     G.validate(config,false)
     return setmetatable({config=config,driver=driver,peers={},queue={},matches={},next_match=1,
-        zone_cursor=0,spawn_cursor=0,paused=false,metrics={ticks=0,spawn_requests=0,wins=0,draws=0}},Engine)
+        zone_cursor=0,spawn_cursor=0,paused=false,recent={},metrics={ticks=0,spawn_requests=0,wins=0,draws=0}},Engine)
 end
 function Engine:call(method,...)
     local fn=self.driver[method]
@@ -13,9 +14,9 @@ function Engine:call(method,...)
     if not ok then return false,tostring(a) end
     return a,b
 end
-function Engine:tell(id,message) self:call('message',id,message) end
-function Engine:announce(match,message)
-    for _,id in ipairs(match.order) do self:tell(id,message) end
+function Engine:tell(id,message,options) self:call('message',id,message,options) end
+function Engine:announce(match,message,options)
+    for _,id in ipairs(match.order) do self:tell(id,message,options) end
 end
 function Engine:count_matches(phase)
     local n=0; for _,m in pairs(self.matches) do if not phase or m.phase==phase then n=n+1 end end
@@ -44,7 +45,7 @@ function Engine:register(id,name,token,now)
         end
         return p
     end
-    p={id=id,name=name,token=token,state='unmanaged',connected=true,last_seen=now}
+    p={id=id,name=name,token=token,state='unmanaged',connected=true,last_seen=now,stats={rounds=0,wins=0,top3=0}}
     self.peers[id]=p
     if self.config.enabled and G.point(self.config.lobby) then self:return_to_lobby(id,now) end
     return p
@@ -78,6 +79,7 @@ function Engine:enqueue(id,now)
     if not p or not p.connected then return false,'Character is not ready.' end
     if p.state=='queued' then return false,'You are already queued.' end
     if p.state~='lobby' then return false,'Reach the kit lobby before joining the queue.' end
+    if p.kit_loading then return false,'Wait for your kit top-up to finish before queuing.' end
     local snapshot=self:call('snapshot',id)
     if not snapshot or not snapshot.ready or not G.inside(snapshot,self.config.lobby,self.config.lobby.radius) then
         return false,'Stand inside the kit lobby to queue.'
@@ -88,22 +90,59 @@ function Engine:enqueue(id,now)
 end
 function Engine:leave(id,now)
     local p=self.peers[id]; if not p then return false,'You are not in BR.' end
+    p.autoqueue=false;p.requeue=nil
     if p.state=='queued' then self:remove_queued(id); p.state='lobby'; return true end
     if p.match then self:eliminate(id,'left the match',now); return true end
     return false,'You are not queued or playing.'
 end
-function Engine:eliminate(id,reason,now)
+function Engine:eliminate(id,reason,now,placement)
     local p=self.peers[id]; if not p then return end
     self:remove_queued(id)
     local m=p.match and self.matches[p.match]
     if m then
-        if m.phase~='active' then self:cancel(m.id,'A player left before the start.',now,true); return end
+        if m.phase~='active' then self:cancel(m.id,'A player left before the start.',now,true,id); return end
         if m.alive[id] then
+            self:call('clear_notices',id,m.id)
+            m.results[id]={id=id,name=p.name,place=placement or m.alive_count,reason=reason}
             m.alive[id]=nil; m.alive_count=m.alive_count-1
-            self:announce(m,p.name..' eliminated ('..reason..'). '..m.alive_count..' remain.')
+            self:tell(id,'Eliminated: '..reason..'. Placement #'..m.results[id].place..'.',{priority=true})
+            m.feed[#m.feed+1]=p.name
+            p.requeue=p.autoqueue or nil
         end
     end
     if G.point(self.config.lobby) then self:return_to_lobby(id,now) else p.state='unmanaged';p.match=nil end
+end
+function Engine:eliminate_batch(entries,now)
+    local counts={}
+    for _,entry in ipairs(entries) do
+        local p=self.peers[entry.id];local m=p and p.match and self.matches[p.match]
+        if m and m.phase=='active' and m.alive[entry.id] and not counts[entry.id] then
+            counts[entry.id]=true;counts[m]= (counts[m] or 0)+1
+        end
+    end
+    local places={}
+    for m,n in pairs(counts) do if type(m)=='table' then places[m.id]=m.alive_count-n+1 end end
+    local processed={}
+    for _,entry in ipairs(entries) do
+        if not processed[entry.id] then
+            processed[entry.id]=true
+            local p=self.peers[entry.id];self:eliminate(entry.id,entry.reason,now,p and places[p.match])
+        end
+    end
+end
+function Engine:queue_position(id)
+    for i,pid in ipairs(self.queue) do if pid==id then return i end end
+end
+function Engine:standings(m)
+    local rows={};for _,row in pairs(m.results) do rows[#rows+1]=row end
+    table.sort(rows,function(a,b)if a.place~=b.place then return a.place<b.place end;return a.id<b.id end)
+    return rows
+end
+function Engine:flush_feed(m)
+    if #m.feed==0 then return end
+    local names={};for i=1,math.min(3,#m.feed) do names[i]=m.feed[i] end
+    local text=table.concat(names,', ')..(#m.feed>3 and ' + '..(#m.feed-3)..' more' or '')
+    self:announce(m,'Out: '..text..'. '..m.alive_count..' remain.');m.feed={}
 end
 function Engine:can_damage(attacker,victim)
     local a,b=self.peers[attacker],self.peers[victim]
@@ -137,7 +176,7 @@ function Engine:admit(now)
     end
     local id=self.next_match; self.next_match=id+1
     local m={id=id,zone=zone,order=order,alive={},alive_count=#order,phase='loading',next_spawn=1,
-        deadline=now+self.config.loading_timeout,targets={}}
+        deadline=now+self.config.loading_timeout,targets={},results={},feed={}}
     self.matches[id]=m
     local slots={}; for i=1,#zone.spawns do slots[i]=i end
     -- Shuffle the recorded, checked spawn points; never guess terrain heights.
@@ -152,27 +191,44 @@ function Engine:admit(now)
     end
     self:announce(m,'Match '..id..' assigned to '..zone.id..'. Loading the arena.')
 end
-function Engine:cancel(id,reason,now,requeue)
+function Engine:cancel(id,reason,now,requeue,exclude)
     local m=self.matches[id]; if not m then return end
     self.matches[id]=nil
     for _,pid in ipairs(m.order) do
         local p=self.peers[pid]
         if p and p.match==id then
-            p.requeue=requeue and p.connected or nil
+            self:call('clear_notices',pid,id)
+            p.requeue=requeue and p.connected and pid~=exclude or nil
             self:return_to_lobby(pid,now)
-            self:tell(pid,'Match cancelled: '..reason)
+            self:tell(pid,'Match cancelled: '..reason,{priority=true})
         end
     end
 end
 function Engine:finish(m,now,timeout)
+    for _,id in ipairs(m.order) do self:call('clear_notices',id,m.id) end
     local winner=nil
     if not timeout and m.alive_count==1 then for id in pairs(m.alive) do winner=id end end
     if winner then
+        m.results[winner]={id=winner,name=self.peers[winner].name,place=1,reason='victor'}
         self.metrics.wins=self.metrics.wins+1
         self:announce(m,'VICTOR: '..self.peers[winner].name..' wins '..m.zone.id..'!')
-    else self.metrics.draws=self.metrics.draws+1;self:announce(m,timeout and 'Time limit reached: draw.' or 'No survivors: draw.') end
+    else self.metrics.draws=self.metrics.draws+1;self:announce(m,timeout and 'Time limit reached: draw.' or 'No survivors: draw.',{priority=true}) end
+    for id in pairs(m.alive) do
+        if not m.results[id] then m.results[id]={id=id,name=self.peers[id].name,place=1,reason='draw'} end
+    end
+    local result={id=m.id,zone=m.zone.id,ended_at=now,winner=winner,rows=self:standings(m),draw=not winner}
+    self.recent[#self.recent+1]=result
+    if #self.recent>self.config.result_history then table.remove(self.recent,1) end
+    for _,row in ipairs(result.rows) do
+        local p=self.peers[row.id]
+        if p then
+            p.last_result=result
+            local s=p.stats;s.rounds=s.rounds+1;s.wins=s.wins+(row.id==winner and 1 or 0)
+            s.top3=s.top3+(row.place<=3 and 1 or 0);s.best=math.min(s.best or row.place,row.place);s.last=row.place
+        end
+    end
     self.matches[m.id]=nil
-    for _,id in ipairs(m.order) do local p=self.peers[id];if p and p.match==m.id then self:return_to_lobby(id,now) end end
+    for _,id in ipairs(m.order) do local p=self.peers[id];if p and p.match==m.id then p.requeue=p.autoqueue or nil;self:return_to_lobby(id,now) end end
 end
 function Engine:spawn_work(now)
     local loading={};for id,m in pairs(self.matches) do if m.phase=='loading' and m.next_spawn<=#m.order then loading[#loading+1]=id end end
@@ -190,10 +246,18 @@ function Engine:spawn_work(now)
         end
     end
 end
-function Engine:tick(now)
+function Engine:tick(now,external_eliminations)
     assert(G.finite(now),'Invalid clock')
     now=math.max(now,self.last_now or now);self.last_now=now
     self.metrics.ticks=self.metrics.ticks+1
+    local pending_deaths={}
+    for _,entry in ipairs(external_eliminations or {}) do
+        local p=self.peers[entry.id];local m=p and p.match and self.matches[p.match]
+        if m then
+            if m.phase=='active' then pending_deaths[#pending_deaths+1]=entry
+            else self:eliminate(entry.id,entry.reason,now) end
+        end
+    end
     -- Finish returning players before admitting queued groups.
     local evict={}
     for id,p in pairs(self.peers) do
@@ -201,7 +265,7 @@ function Engine:tick(now)
             local s=self:call('snapshot',id)
             if s and s.ready and G.inside(s,self.config.lobby,self.config.lobby.radius) then
                 p.state='lobby';p.target=nil
-                self:tell(id,'Kit lobby: !items <search>, !give <item> [count], then !ffa.')
+                self:tell(id,'Kit lobby: !items <search>, !give <item> [count], then !ffa. !brhelp lists all commands.')
                 if p.requeue then p.requeue=nil;self:enqueue(id,now) end
             elseif now>=p.return_deadline then
                 p.state='return_failed';self:tell(id,'Lobby return timed out. Use !lobby to retry; queuing and item grants are locked.')
@@ -223,24 +287,38 @@ function Engine:tick(now)
             if arrived then
                 m.phase='countdown';m.starts_at=now+self.config.countdown_seconds
                 for _,id in ipairs(m.order) do self.peers[id].state='countdown' end
-                self:announce(m,'All '..#m.order..' players arrived. Fight starts in '..self.config.countdown_seconds..' seconds.')
+                self:announce(m,'All '..#m.order..' players arrived. Fight starts in '..self.config.countdown_seconds..' seconds.',{priority=true,key='phase:'..m.id,ttl=self.config.countdown_seconds})
             elseif now>=m.deadline then cancelled[#cancelled+1]=m.id end
+        elseif m.phase=='countdown' and now<m.starts_at then
+            local seconds=math.ceil(m.starts_at-now)
+            if seconds<=5 and not m.last_countdown then
+                m.last_countdown=seconds;self:announce(m,'Fight in '..seconds..'...', {priority=true,key='phase:'..m.id,ttl=seconds})
+            end
         elseif m.phase=='countdown' and now>=m.starts_at then
             local ok=true
             for _,id in ipairs(m.order) do if not self:call('mode',id,'active') then ok=false end end
             if ok then
                 m.phase='active';m.started_at=now
+                local r=Ring.at(self.config,m.zone,0);m.ring_key=r.stage..':'..r.phase
                 for _,id in ipairs(m.order) do self.peers[id].state='active' end
-                self:announce(m,'FIGHT! Last player standing wins. Stay inside '..m.zone.id..'.')
+                self:announce(m,'FIGHT! Last player standing wins. '..(self.config.ring_enabled and 'The circle will shrink. Use !ring to check it.' or 'Stay inside '..m.zone.id..'.'),{priority=true,key='phase:'..m.id,ttl=15})
             else cancelled[#cancelled+1]=m.id end
         end
     end
     for _,id in ipairs(cancelled) do self:cancel(id,'Loading or combat setup failed.',now,false) end
     -- Resolve the entire sample before awarding a win: simultaneous knockouts are a draw.
-    local eliminations={}
+    local eliminations=pending_deaths
     for _,m in pairs(self.matches) do
         if m.phase=='active' and now>=(m.next_check or 0) then
             m.next_check=now+self.config.combat_sample_seconds
+            m.ring=Ring.at(self.config,m.zone,now-m.started_at)
+            local key=m.ring.stage..':'..m.ring.phase
+            if self.config.ring_enabled and key~=m.ring_key then
+                m.ring_key=key
+                self:announce(m,m.ring.phase=='holding' and ('Circle '..m.ring.stage..' closes in '..m.ring.remaining..'s. !ring for center and radius.')
+                    or m.ring.phase=='closing' and ('Circle '..m.ring.stage..' is closing! Reach the center; !ring for coordinates.')
+                    or 'Final circle reached. Finish the fight!',{priority=true,key='ring:'..m.id,ttl=15})
+            end
             for _,id in ipairs(m.order) do
                 if m.alive[id] then
                     local p=self.peers[id];local s=self:call('snapshot',id)
@@ -251,8 +329,8 @@ function Engine:tick(now)
                     elseif not G.finite(s.health) then reason='health unavailable'
                     elseif not G.point(s) then reason='position unavailable'
                     elseif s.health<=self.config.knockout_health then reason='knocked out'
-                    elseif not G.inside(s,m.zone.center,m.zone.radius) then
-                        if not p.outside_since then p.outside_since=now;self:tell(id,'Return to the arena within '..self.config.boundary_grace_seconds..' seconds.') end
+                    elseif not G.inside(s,m.zone.center,m.ring.radius) then
+                        if not p.outside_since then p.outside_since=now;self:tell(id,'Outside the safe circle! Return within '..self.config.boundary_grace_seconds..' seconds. !ring shows its center.',{priority=true,key='boundary:'..m.id,ttl=self.config.boundary_grace_seconds}) end
                         if now-p.outside_since>=self.config.boundary_grace_seconds then reason='left the arena' end
                     else p.outside_since=nil end
                     if reason then eliminations[#eliminations+1]={id=id,reason=reason} end
@@ -260,7 +338,8 @@ function Engine:tick(now)
             end
         end
     end
-    for _,e in ipairs(eliminations) do self:eliminate(e.id,e.reason,now) end
+    self:eliminate_batch(eliminations,now)
+    for _,m in pairs(self.matches) do if m.phase=='active' then self:flush_feed(m) end end
     local finished={}
     for id,m in pairs(self.matches) do
         local timeout=m.phase=='active' and self.config.match_timeout>0 and now-m.started_at>=self.config.match_timeout
@@ -273,7 +352,7 @@ function Engine:shutdown(now)
     local ids={};for id in pairs(self.matches) do ids[#ids+1]=id end
     for _,id in ipairs(ids) do self:cancel(id,'BR stopped.',now,false) end
     self.queue={}
-    for id,p in pairs(self.peers) do p.match=nil;p.state='unmanaged';self:call('release',id) end
+    for id,p in pairs(self.peers) do p.match=nil;p.state='unmanaged';p.requeue=nil;p.autoqueue=false;self:call('release',id) end
     self:call('cancel_work')
 end
 return Engine
