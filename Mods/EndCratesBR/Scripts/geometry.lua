@@ -13,7 +13,7 @@ local function integer(c,key,low,high)
     assert(G.finite(n) and n%1==0 and n>=low and n<=high, 'Invalid config: '..key)
 end
 function G.validate(c,complete)
-    integer(c,'players_per_match',2,20)
+    integer(c,'players_per_match',20,20)
     integer(c,'max_active_matches',1,50)
     integer(c,'max_loading_matches',1,c.max_active_matches)
     integer(c,'spawn_budget_per_tick',1,20)

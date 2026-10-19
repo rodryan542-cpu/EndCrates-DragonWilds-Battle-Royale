@@ -126,6 +126,12 @@ class BootstrapTests(unittest.TestCase):
         self.boot();self.lua.execute('scheduled=0;ExecuteInGameThread=function(fn)scheduled=scheduled+1;held=fn end;loop();loop()')
         self.assertEqual(self.lua.eval('scheduled'),1)
 
+    def test_world_exit_discards_queued_chat_from_the_previous_world(self):
+        self.lua.execute('test_now=0;os.time=function()return test_now end')
+        self.boot()
+        self.lua.execute("chat_command(pc1,'!brhelp');game_state=nil;test_now=3;loop()")
+        self.assertEqual(self.lua.eval('#delivered'),0)
+
 
 if __name__=='__main__':
     unittest.main()

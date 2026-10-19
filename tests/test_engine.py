@@ -147,6 +147,10 @@ class EngineTests(unittest.TestCase):
         self.execute('table.remove(config.zones[1].spawns);ok=pcall(G.validate,config,true)')
         self.assertFalse(self.value('ok'))
 
+    def test_accidental_non_twenty_player_config_is_rejected(self):
+        self.execute('config.players_per_match=19;ok=pcall(G.validate,config,false)')
+        self.assertFalse(self.value('ok'))
+
     def test_idle_disconnected_peers_are_evicted(self):
         self.execute('join(1,1);engine:disconnect("p1",1);engine:tick(1000)')
         self.assertIsNone(self.value('engine.peers.p1'))

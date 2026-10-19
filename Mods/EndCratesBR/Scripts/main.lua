@@ -27,7 +27,11 @@ end
 local function refresh(now)
     local current=FindFirstOf('DominionGameStateBase')
     if not valid(current) or not current:HasAuthority() then
-        if world then stop();world=nil end
+        if world then
+            stop();world=nil
+            adapter=Adapter.new(Config,log);engine=Engine.new(Config,adapter)
+            commands=Commands.new(engine,adapter,catalogue)
+        end
         return false
     end
     if world and world~=current:GetAddress() then
